@@ -1,0 +1,19 @@
+{
+  "name": "RAB Bangunan Pribadi",
+  "short_name": "RAB Rumah",
+  "description": "Aplikasi manajemen RAB, belanja material, biaya, dan uang tukang untuk pembangunan rumah pribadi.",
+  "id": "/",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F4F1FF",
+  "theme_color": "#5B33E8",
+  "lang": "id",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
