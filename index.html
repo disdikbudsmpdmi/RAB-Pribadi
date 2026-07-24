@@ -910,6 +910,17 @@ let modals = {};
 let charts = {};
 let monitoringFilter = null;
 
+// ============================================================
+// KONFIGURASI KONEKSI KE GOOGLE APPS SCRIPT
+// ============================================================
+// 1. Isi dengan URL Web App Apps Script Anda (harus diakhiri "/exec").
+// 2. Isi dengan token rahasia yang SAMA PERSIS dengan API_TOKEN di Code.gs.
+// Jika SCRIPT_URL dikosongkan, aplikasi otomatis berjalan di Mode Pratinjau (data contoh, tidak tersimpan).
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw84e4rPmPpkVtShvrI9tIiNafXqJqu6FFNexz7C5x0uop7mawOQnXp7llc6aj9Z-wx/exec"; // contoh: "https://script.google.com/macros/s/AKfycbx.../exec"
+const API_TOKEN  = "97314fb7-b25f-477d-b715-44713a2a486f";
+
+function isProdMode() { return !!SCRIPT_URL; }
+
 const KATEGORI_RAB = ["Persiapan","Pondasi","Struktur","Dinding","Atap","Plafon","Lantai","Pintu dan Jendela","Pengecatan","Listrik","Plumbing","Sanitair","Finishing","Pagar","Kanopi","Taman","Lain-lain","UMUM"];
 
 const KAT_ICON = {
@@ -931,7 +942,7 @@ window.onload = function() {
     if (el) modals[id] = new bootstrap.Modal(el);
   });
 
-  if (typeof google === 'undefined') {
+  if (!isProdMode()) {
     setDummyDatabase();
     setTimeout(() => { initApp(); }, 500);
   } else {
@@ -1037,25 +1048,42 @@ function setDummyDatabase() {
 }
 
 // ============================================================
-// GOOGLE APPS SCRIPT BRIDGE
+// JEMBATAN KE GOOGLE APPS SCRIPT (via fetch, bekerja dari domain manapun termasuk GitHub Pages)
 // ============================================================
+async function apiGet(action) {
+  const url = `${SCRIPT_URL}?action=${encodeURIComponent(action)}&token=${encodeURIComponent(API_TOKEN)}`;
+  const res = await fetch(url);
+  const json = await res.json();
+  if (json.error) throw new Error(json.error);
+  return json.data;
+}
+
+async function apiPost(action, payload) {
+  // Content-Type text/plain sengaja dipakai agar browser TIDAK mengirim preflight OPTIONS,
+  // karena Apps Script Web App tidak bisa merespons preflight request.
+  const res = await fetch(SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action, payload, token: API_TOKEN })
+  });
+  const json = await res.json();
+  if (json.error) throw new Error(json.error);
+  return json.data;
+}
+
 function loadProductionData() {
   startLoad();
-  google.script.run
-    .withSuccessHandler(res => { db = res; initApp(); })
-    .withFailureHandler(err => { Swal.fire("Error", err.message, "error"); endLoad(); })
-    .getAllData();
+  apiGet('getAllData')
+    .then(res => { db = res; initApp(); })
+    .catch(err => { Swal.fire("Error", err.message, "error"); endLoad(); });
 }
 
 function callGAS(funcName, ...args) {
-  if (typeof google === 'undefined') return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    startLoad("Menyimpan...");
-    google.script.run
-      .withSuccessHandler(res => { db = res; endLoad(); resolve(res); })
-      .withFailureHandler(err => { endLoad(); Swal.fire("Error", err.message, "error"); reject(err); })
-      [funcName](...args);
-  });
+  if (!isProdMode()) return Promise.resolve();
+  startLoad("Menyimpan...");
+  return apiPost(funcName, args)
+    .then(res => { db = res; endLoad(); return res; })
+    .catch(err => { endLoad(); Swal.fire("Error", err.message, "error"); throw err; });
 }
 
 // ============================================================
@@ -1167,7 +1195,7 @@ function renderSettings() {
 
 async function saveSettingsForm() {
   const arr = ["NamaBangunan","Lokasi","LuasBangunan","LuasTanah","TanggalMulai","TargetSelesai","Keterangan"].map(k => [k, document.getElementById('set-'+k).value]);
-  if (typeof google === 'undefined') {
+  if (!isProdMode()) {
     db.setting = arr.map(a => ({ Kunci:a[0], Nilai:a[1] }));
     Swal.fire("Tersimpan","Profil disimpan sementara (Mode Pratinjau).","success");
     renderDashboard();
@@ -1242,7 +1270,7 @@ async function saveRAB(e) {
     Satuan: document.getElementById('r-sat').value, HargaSatuan: parseRp(document.getElementById('r-harga').value),
     Jumlah: parseRp(document.getElementById('r-total').value)
   };
-  if (typeof google === 'undefined') {
+  if (!isProdMode()) {
     if (isEdit) { const idx = db.rab.findIndex(x => x.Kode === kodeRAB); db.rab[idx] = pl; } else { db.rab.push(pl); }
     modals.RAB.hide(); refreshAll();
   } else {
@@ -1298,7 +1326,7 @@ async function saveMaterial(e) {
     Satuan: document.getElementById('m-sat').value, HargaSatuan: parseRp(document.getElementById('m-harga').value),
     Supplier: document.getElementById('m-toko').value, Catatan: document.getElementById('m-catatan').value
   };
-  if (typeof google === 'undefined') {
+  if (!isProdMode()) {
     if (isEdit) { const idx = db.material.findIndex(x => x.Kode === kodeMat); db.material[idx] = pl; } else { db.material.push(pl); }
     modals.Mat.hide(); refreshAll();
   } else {
@@ -1398,7 +1426,7 @@ function saveBelanja(e) {
       HargaSatuan: parseRp(document.getElementById('bm-harga').value), Total: parseRp(document.getElementById('bm-total').value),
       Toko: document.getElementById('bm-toko').value, BuktiNota: url
     };
-    if (typeof google === 'undefined') {
+    if (!isProdMode()) {
       if (isEdit) { const idx = db.belanjaMaterial.findIndex(x => x.NoTransaksi === noTrx); db.belanjaMaterial[idx] = pl; } else { db.belanjaMaterial.push(pl); }
     } else {
       if (isEdit) await callGAS('updateData','BelanjaMaterial','No Transaksi',noTrx,pl); else await callGAS('saveData','BelanjaMaterial',pl);
@@ -1470,7 +1498,7 @@ function savePengeluaranLain(e) {
       JenisBiaya: document.getElementById('p-jenis').value, Deskripsi: document.getElementById('p-desc').value,
       Nominal: parseRp(document.getElementById('p-nominal').value), Penerima: document.getElementById('p-penerima').value, BuktiNota: url
     };
-    if (typeof google === 'undefined') {
+    if (!isProdMode()) {
       if (isEdit) { const idx = db.pengeluaran.findIndex(x => x.NoTransaksi === noTrx); db.pengeluaran[idx] = pl; } else { db.pengeluaran.push(pl); }
     } else {
       if (isEdit) await callGAS('updateData','Pengeluaran','No Transaksi',noTrx,pl); else await callGAS('saveData','Pengeluaran',pl);
@@ -1486,13 +1514,12 @@ function processFile(fileInput, callback) {
   if (fileInput.files.length > 0) {
     const fr = new FileReader();
     fr.onload = (ev) => {
-      if (typeof google === 'undefined') { callback(ev.target.result); }
+      if (!isProdMode()) { callback(ev.target.result); }
       else {
         startLoad("Mengunggah Lampiran...");
-        google.script.run
-          .withSuccessHandler(url => { endLoad(); callback(url); })
-          .withFailureHandler(err => { endLoad(); callback(ev.target.result); })
-          .uploadFile(ev.target.result, fileInput.files[0].name);
+        apiPost('uploadFile', [ev.target.result, fileInput.files[0].name])
+          .then(url => { endLoad(); callback(url); })
+          .catch(() => { endLoad(); callback(ev.target.result); });
       }
     };
     fr.readAsDataURL(fileInput.files[0]);
@@ -1616,7 +1643,7 @@ async function saveCashFlow(e) {
     IDTransaksi: idTrx, Tanggal: document.getElementById('c-tgl').value, JenisTransaksi: document.getElementById('c-jenis').value,
     Nominal: parseRp(document.getElementById('c-nominal').value), Keterangan: document.getElementById('c-ket').value
   };
-  if (typeof google === 'undefined') {
+  if (!isProdMode()) {
     if (isEdit) { const idx = db.cashflow.findIndex(x => x.IDTransaksi === idTrx); db.cashflow[idx] = pl; } else { db.cashflow.push(pl); }
     modals.Cash.hide(); refreshAll();
   } else {
@@ -1734,7 +1761,7 @@ function saveTukang(e) {
       Jenis: document.getElementById('tk-jenis').value, Deskripsi: document.getElementById('tk-desc').value,
       Nominal: parseRp(document.getElementById('tk-nominal').value), BuktiNota: url
     };
-    if (typeof google === 'undefined') {
+    if (!isProdMode()) {
       if (isEdit) { const idx = db.tukang.findIndex(x => x.NoTransaksi === noTrx); db.tukang[idx] = pl; } else { db.tukang.push(pl); }
       modals.Tukang.hide(); renderTukang();
     } else {
@@ -1751,7 +1778,7 @@ function delData(sheet, idCol, idVal) {
   Swal.fire({ title:"Hapus data ini?", text:"Aksi ini mengubah total angka kalkulasi.", icon:"warning", showCancelButton:true, confirmButtonColor:"#FF5C7A", confirmButtonText:"Ya, Hapus!" })
   .then(async (res) => {
     if (res.isConfirmed) {
-      if (typeof google === 'undefined') {
+      if (!isProdMode()) {
         let sKey = sheet.charAt(0).toLowerCase() + sheet.slice(1);
         db[sKey] = db[sKey].filter(x => x[idCol.replace(/\s+/g,'')] !== idVal);
         refreshAll();
