@@ -522,6 +522,7 @@ body{
             <option value="REKAP">Ringkasan Sisa Anggaran (Per Kategori)</option>
             <option value="RAB">Detail RAB Rencana Awal</option>
             <option value="PENGELUARAN">Riwayat Semua Transaksi Keluar</option>
+            <option value="TUKANG">Bayar Tukang</option>
           </select>
           <div class="d-flex gap-2">
             <button class="btn btn-outline-danger flex-grow-1 fw-bold rounded-3" onclick="printReport()"><i class="fa-solid fa-file-pdf me-2"></i>Cetak PDF</button>
@@ -1846,6 +1847,19 @@ function renderLaporan() {
     db.pengeluaran.forEach(p => pList.push({ tgl:p.Tanggal, tipe:p.JenisBiaya, kat:p.KategoriPekerjaan, desc:p.Deskripsi, ke:p.Penerima, nom:p.Nominal }));
     pList.sort((a,b) => new Date(b.tgl)-new Date(a.tgl)).forEach(x => { t+=parseRp(x.nom); tb.innerHTML += `<tr><td>${x.tgl}</td><td>${x.tipe}</td><td>${x.kat}</td><td>${x.desc}</td><td>${x.ke||'-'}</td><td class="text-end fw-bold">${formatRp(x.nom)}</td></tr>`; });
     tb.innerHTML += `<tr class="table-light fw-bold"><td colspan="5" class="text-end">TOTAL KELUAR</td><td class="text-end">${formatRp(t)}</td></tr>`;
+  } else if (type === "TUKANG") {
+    document.getElementById('lap-title').innerText = "RIWAYAT BAYAR TUKANG";
+    th.innerHTML = `<tr><th>Tgl</th><th>Nama Tukang</th><th>Jenis</th><th>Deskripsi</th><th class="text-end">Nominal</th></tr>`;
+    let tKontrak = 0, tBayar = 0;
+    const list = [...db.tukang].sort((a,b) => new Date(a.Tanggal) - new Date(b.Tanggal));
+    list.forEach(t => {
+      const nom = parseRp(t.Nominal);
+      if (t.Jenis === 'Kontrak') tKontrak += nom; else tBayar += nom;
+      tb.innerHTML += `<tr><td>${t.Tanggal}</td><td>${t.NamaTukang}</td><td>${t.Jenis}</td><td>${t.Deskripsi||'-'}</td><td class="text-end fw-bold">${formatRp(t.Nominal)}</td></tr>`;
+    });
+    tb.innerHTML += `<tr class="table-light"><td colspan="4" class="text-end">Total Nilai Kontrak</td><td class="text-end">${formatRp(tKontrak)}</td></tr>`;
+    tb.innerHTML += `<tr class="table-light fw-bold"><td colspan="4" class="text-end">Total Sudah Dibayar</td><td class="text-end">${formatRp(tBayar)}</td></tr>`;
+    tb.innerHTML += `<tr class="table-light fw-bold"><td colspan="4" class="text-end">Sisa Belum Dibayar</td><td class="text-end">${formatRp(tKontrak-tBayar)}</td></tr>`;
   }
 }
 
