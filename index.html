@@ -524,6 +524,10 @@ body{
             <option value="PENGELUARAN">Riwayat Semua Transaksi Keluar</option>
             <option value="TUKANG">Bayar Tukang</option>
           </select>
+          <div class="search-wrap mb-3">
+            <i class="fa-solid fa-search"></i>
+            <input type="text" id="lap-search" placeholder="Cari nama kategori / pekerjaan / item / tukang..." oninput="renderLaporan()">
+          </div>
           <div class="d-flex gap-2">
             <button class="btn btn-outline-danger flex-grow-1 fw-bold rounded-3" onclick="printReport()"><i class="fa-solid fa-file-pdf me-2"></i>Cetak PDF</button>
             <button class="btn btn-outline-success flex-grow-1 fw-bold rounded-3" onclick="exportExcel()"><i class="fa-solid fa-file-excel me-2"></i>Excel</button>
@@ -1819,47 +1823,61 @@ function refreshAll() {
 function renderLaporan() {
   const type = document.getElementById('lap-jenis').value;
   const th = document.querySelector('#lap-table thead'); const tb = document.querySelector('#lap-table tbody');
+  const searchEl = document.getElementById('lap-search');
+  const q = (searchEl ? searchEl.value : '').trim().toLowerCase();
   document.getElementById('lap-date').innerText = "Update: " + new Date().toLocaleString('id-ID');
   document.getElementById('lap-subtitle').innerText = getSet("NamaBangunan") || "Rumah Tinggal Pribadi";
   th.innerHTML = ""; tb.innerHTML = "";
 
+  // helper: does this row match the search query?
+  const match = (...fields) => !q || fields.some(f => String(f||'').toLowerCase().includes(q));
+
   if (type === "REKAP") {
     document.getElementById('lap-title').innerText = "REKAPITULASI SISA ANGGARAN";
     th.innerHTML = `<tr><th>Kategori</th><th class="text-end">RAB</th><th class="text-end">Realisasi</th><th class="text-end">Sisa</th><th class="text-center">%</th></tr>`;
-    let tR=0, tA=0;
-    KATEGORI_RAB.forEach(kat => {
+    let tR=0, tA=0, any=false;
+    KATEGORI_RAB.filter(kat => match(kat)).forEach(kat => {
       let r = db.rab.filter(x => x.Kategori === kat).reduce((s,x) => s+parseRp(x.Jumlah),0);
       let a = db.belanjaMaterial.filter(x => x.KategoriPekerjaan === kat).reduce((s,x) => s+parseRp(x.Total),0) + db.pengeluaran.filter(x => x.KategoriPekerjaan === kat).reduce((s,x) => s+parseRp(x.Nominal),0);
-      if (r>0 || a>0) { tR+=r; tA+=a; let ps = r>0?(a/r*100):100;
+      if (r>0 || a>0) { tR+=r; tA+=a; any=true; let ps = r>0?(a/r*100):100;
         tb.innerHTML += `<tr><td>${kat}</td><td class="text-end">${formatRp(r)}</td><td class="text-end text-danger">${formatRp(a)}</td><td class="text-end">${formatRp(r-a)}</td><td class="text-center">${ps.toFixed(1)}%</td></tr>`; }
     });
-    tb.innerHTML += `<tr class="table-light fw-bold"><td>TOTAL</td><td class="text-end">${formatRp(tR)}</td><td class="text-end">${formatRp(tA)}</td><td class="text-end">${formatRp(tR-tA)}</td><td class="text-center">-</td></tr>`;
+    if (!any) tb.innerHTML += `<tr><td colspan="5" class="text-center text-muted py-3">Tidak ada kategori yang cocok dengan pencarian.</td></tr>`;
+    tb.innerHTML += `<tr class="table-light fw-bold"><td>TOTAL${q?' (Hasil Filter)':''}</td><td class="text-end">${formatRp(tR)}</td><td class="text-end">${formatRp(tA)}</td><td class="text-end">${formatRp(tR-tA)}</td><td class="text-center">-</td></tr>`;
   } else if (type === "RAB") {
     document.getElementById('lap-title').innerText = "DETAIL RAB AWAL";
     th.innerHTML = `<tr><th>Kategori</th><th>Pekerjaan</th><th>Vol</th><th>Sat</th><th class="text-end">Harga</th><th class="text-end">Jumlah</th></tr>`;
-    let t=0; db.rab.forEach(r => { t+=parseRp(r.Jumlah); tb.innerHTML += `<tr><td>${r.Kategori}</td><td>${r.NamaPekerjaan}</td><td>${r.Volume}</td><td>${r.Satuan}</td><td class="text-end">${formatRp(r.HargaSatuan)}</td><td class="text-end fw-bold">${formatRp(r.Jumlah)}</td></tr>`; });
-    tb.innerHTML += `<tr class="table-light fw-bold"><td colspan="5" class="text-end">TOTAL</td><td class="text-end">${formatRp(t)}</td></tr>`;
+    let t=0;
+    const rows = db.rab.filter(r => match(r.Kategori, r.NamaPekerjaan));
+    if (rows.length === 0) tb.innerHTML += `<tr><td colspan="6" class="text-center text-muted py-3">Tidak ada pekerjaan yang cocok dengan pencarian.</td></tr>`;
+    rows.forEach(r => { t+=parseRp(r.Jumlah); tb.innerHTML += `<tr><td>${r.Kategori}</td><td>${r.NamaPekerjaan}</td><td>${r.Volume}</td><td>${r.Satuan}</td><td class="text-end">${formatRp(r.HargaSatuan)}</td><td class="text-end fw-bold">${formatRp(r.Jumlah)}</td></tr>`; });
+    tb.innerHTML += `<tr class="table-light fw-bold"><td colspan="5" class="text-end">TOTAL${q?' (Hasil Filter)':''}</td><td class="text-end">${formatRp(t)}</td></tr>`;
   } else if (type === "PENGELUARAN") {
     document.getElementById('lap-title').innerText = "DETAIL SELURUH PENGELUARAN";
     th.innerHTML = `<tr><th>Tgl</th><th>Tipe</th><th>Kategori</th><th>Item</th><th>Toko/Penerima</th><th class="text-end">Nominal</th></tr>`;
-    let t=0; let pList = [];
-    db.belanjaMaterial.forEach(b => pList.push({ tgl:b.Tanggal, tipe:"Material", kat:b.KategoriPekerjaan, desc:`${b.Qty} ${b.Satuan} ${b.NamaMaterial}`, ke:b.Toko, nom:b.Total }));
-    db.pengeluaran.forEach(p => pList.push({ tgl:p.Tanggal, tipe:p.JenisBiaya, kat:p.KategoriPekerjaan, desc:p.Deskripsi, ke:p.Penerima, nom:p.Nominal }));
-    pList.sort((a,b) => new Date(b.tgl)-new Date(a.tgl)).forEach(x => { t+=parseRp(x.nom); tb.innerHTML += `<tr><td>${x.tgl}</td><td>${x.tipe}</td><td>${x.kat}</td><td>${x.desc}</td><td>${x.ke||'-'}</td><td class="text-end fw-bold">${formatRp(x.nom)}</td></tr>`; });
-    tb.innerHTML += `<tr class="table-light fw-bold"><td colspan="5" class="text-end">TOTAL KELUAR</td><td class="text-end">${formatRp(t)}</td></tr>`;
+    let t=0; let totalQty=0; let pList = [];
+    db.belanjaMaterial.forEach(b => pList.push({ tgl:b.Tanggal, tipe:"Material", kat:b.KategoriPekerjaan, desc:`${b.Qty} ${b.Satuan} ${b.NamaMaterial}`, ke:b.Toko, nom:b.Total, qty:parseFloat(b.Qty)||0 }));
+    db.pengeluaran.forEach(p => pList.push({ tgl:p.Tanggal, tipe:p.JenisBiaya, kat:p.KategoriPekerjaan, desc:p.Deskripsi, ke:p.Penerima, nom:p.Nominal, qty:0 }));
+    pList = pList.filter(x => match(x.kat, x.desc, x.ke, x.tipe));
+    if (pList.length === 0) tb.innerHTML += `<tr><td colspan="6" class="text-center text-muted py-3">Tidak ada transaksi yang cocok dengan pencarian.</td></tr>`;
+    pList.sort((a,b) => new Date(b.tgl)-new Date(a.tgl)).forEach(x => { t+=parseRp(x.nom); totalQty+=(x.qty||0); tb.innerHTML += `<tr><td>${x.tgl}</td><td>${x.tipe}</td><td>${x.kat}</td><td>${x.desc}</td><td>${x.ke||'-'}</td><td class="text-end fw-bold">${formatRp(x.nom)}</td></tr>`; });
+    tb.innerHTML += `<tr class="table-light"><td colspan="5" class="text-end">Jumlah Item${q?' (Hasil Filter)':''}</td><td class="text-end fw-bold">${totalQty.toLocaleString('id-ID')}</td></tr>`;
+    tb.innerHTML += `<tr class="table-light fw-bold"><td colspan="5" class="text-end">TOTAL KELUAR${q?' (Hasil Filter)':''}</td><td class="text-end">${formatRp(t)}</td></tr>`;
   } else if (type === "TUKANG") {
     document.getElementById('lap-title').innerText = "RIWAYAT BAYAR TUKANG";
     th.innerHTML = `<tr><th>Tgl</th><th>Nama Tukang</th><th>Jenis</th><th>Deskripsi</th><th class="text-end">Nominal</th></tr>`;
     let tKontrak = 0, tBayar = 0;
-    const list = [...db.tukang].sort((a,b) => new Date(a.Tanggal) - new Date(b.Tanggal));
+    const list = [...db.tukang].filter(t => match(t.NamaTukang, t.Deskripsi, t.Jenis)).sort((a,b) => new Date(a.Tanggal) - new Date(b.Tanggal));
+    if (list.length === 0) tb.innerHTML += `<tr><td colspan="5" class="text-center text-muted py-3">Tidak ada data tukang yang cocok dengan pencarian.</td></tr>`;
     list.forEach(t => {
       const nom = parseRp(t.Nominal);
       if (t.Jenis === 'Kontrak') tKontrak += nom; else tBayar += nom;
       tb.innerHTML += `<tr><td>${t.Tanggal}</td><td>${t.NamaTukang}</td><td>${t.Jenis}</td><td>${t.Deskripsi||'-'}</td><td class="text-end fw-bold">${formatRp(t.Nominal)}</td></tr>`;
     });
-    tb.innerHTML += `<tr class="table-light"><td colspan="4" class="text-end">Total Nilai Kontrak</td><td class="text-end">${formatRp(tKontrak)}</td></tr>`;
-    tb.innerHTML += `<tr class="table-light fw-bold"><td colspan="4" class="text-end">Total Sudah Dibayar</td><td class="text-end">${formatRp(tBayar)}</td></tr>`;
-    tb.innerHTML += `<tr class="table-light fw-bold"><td colspan="4" class="text-end">Sisa Belum Dibayar</td><td class="text-end">${formatRp(tKontrak-tBayar)}</td></tr>`;
+    const filterLabel = q?' (Hasil Filter)':'';
+    tb.innerHTML += `<tr class="table-light"><td colspan="4" class="text-end">Total Nilai Kontrak${filterLabel}</td><td class="text-end">${formatRp(tKontrak)}</td></tr>`;
+    tb.innerHTML += `<tr class="table-light fw-bold"><td colspan="4" class="text-end">Total Sudah Dibayar${filterLabel}</td><td class="text-end">${formatRp(tBayar)}</td></tr>`;
+    tb.innerHTML += `<tr class="table-light fw-bold"><td colspan="4" class="text-end">Sisa Belum Dibayar${filterLabel}</td><td class="text-end">${formatRp(tKontrak-tBayar)}</td></tr>`;
   }
 }
 
